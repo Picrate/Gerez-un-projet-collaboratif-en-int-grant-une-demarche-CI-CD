@@ -15,6 +15,8 @@
 	<description>L'application de joke par excellence !</description>
 	<properties>
 		<java.version>11</java.version>
+		<sonar.organization>picrate</sonar.organization>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -38,6 +40,11 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<plugin>
+        			<groupId>org.sonarsource.scanner.maven</groupId>
+        			<artifactId>sonar-maven-plugin</artifactId>
+        			<version>4.0.0.4121</version>
+      			</plugin>
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
