@@ -1,0 +1,111 @@
+name: Bob App Backend CI/CD Workflow
+
+# Only execute action when backend files changed on branch main for push and pull-request
+on:
+  pull_request:
+    paths: 'back/**'
+    branches: main  
+  push:
+    paths: 'back/**'
+    branches: main
+    
+jobs:
+  # Main job Build, Test & Launch Sonar analysis
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{github.workspace}}/back
+    # perissions for Jacoco coverage report upload & summary
+    permissions: 
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+    # Checkout project repository on runner
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+    # Install JDK 11 For building projet and JDK 17 for sonarcloud scan
+    - name: Set up JDK 11 & JDK 17 for x64
+      uses: actions/setup-java@v4
+      with:
+        java-version: |
+          17
+          11
+        distribution: 'temurin'
+        architecture:  x64
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+    - name: Cache Maven packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2    
+   # Build Project
+    - name: Maven Build
+      run: mvn clean install    
+    # Generating coverage-report
+    - name: JaCoCo Code Coverage Report
+      id: jacoco_reporter
+      uses: PavanMudigonda/jacoco-reporter@v5.0
+      with:
+        coverage_results_path: ${{ github.workspace }}/back/target/site/jacoco/jacoco.xml
+        coverage_report_name: Jacoco Backend Test Coverage Report
+        coverage_report_title: Backend Test Coverage Report
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        skip_check_run: false
+        minimum_coverage: 85
+        fail_below_threshold: false
+        publish_only_summary: false    
+    # Publish Coverage Job Summary
+    - name: Add Jacoco report to workflow run summary
+      run: |
+        echo "| Outcome | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Coverage % | ${{ steps.jacoco_reporter.outputs.coverage_percentage }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| :heavy_check_mark: Number of Lines Covered | ${{ steps.jacoco_reporter.outputs.covered_lines }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| :x: Number of Lines Missed | ${{ steps.jacoco_reporter.outputs.missed_lines }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Total Number of Lines | ${{ steps.jacoco_reporter.outputs.total_lines }} |" >> $GITHUB_STEP_SUMMARY        
+    # Upload coverage-report.md artifact
+    - name: Upload Code Coverage Artifacts
+      uses: actions/upload-artifact@v4      
+      with:
+        name: backend-coverage-report
+        path: ./back/target/site/jacoco
+        retention-days: 7
+    # Launch sonar code Analysis
+    - name: Sonar Code Analysis    
+      env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+      run: export JAVA_HOME="/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.12-7/x64" && mvn -Dsonar.projectKey=picrate_Gerez-un-projet-collaboratif-en-int-grant-une-demarche-CI-CD -Dsonar.java.jdkHome=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/11.0.24-8/x64 sonar:sonar
+  
+  # Docker image builder job    
+  docker:
+    if: ${{ success() }}
+    needs: build
+    runs-on:  ubuntu-latest
+    steps:
+      -        
+        name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: "{{defaultContext}}:back"
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/bobapp-backend:latest
+  
